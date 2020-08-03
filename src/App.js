@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import './App.css';
 import { withAuthenticator, AmplifySignOut } from '@aws-amplify/ui-react';
-import { API } from 'aws-amplify';
 import { listTodos } from './graphql/queries';
 import {
   createTodo as createNoteMutation,
   deleteTodo as deleteNoteMutation,
 } from './graphql/mutations';
+import { API, Storage } from 'aws-amplify';
 
-const initialFormState = { name: '', description: '' };
+const initialFormState = { name: '', description: '', image: '' };
 
 function App() {
   const [notes, setNotes] = useState([]);
@@ -20,6 +20,15 @@ function App() {
 
   async function fetchNotes() {
     const apiData = await API.graphql({ query: listTodos });
+    const notesFromAPI = apiData.data.listTodos.items;
+    await Promise.all(
+      notesFromAPI.map(async (note) => {
+        if (note.image) {
+          const image = await Storage.get(note.image);
+          note.image = image;
+        }
+      })
+    );
     setNotes(apiData.data.listTodos.items);
   }
 
@@ -29,6 +38,10 @@ function App() {
       query: createNoteMutation,
       variables: { input: formData },
     });
+    if (formData.image) {
+      const image = await Storage.get(formData.image);
+      formData.image = image;
+    }
     setNotes([...notes, formData]);
     setFormData(initialFormState);
   }
@@ -42,9 +55,17 @@ function App() {
     });
   }
 
+  async function onChange(e) {
+    if (!e.target.files[0]) return;
+    const file = e.target.files[0];
+    setFormData({ ...formData, image: file.name });
+    await Storage.put(file.name, file);
+    fetchNotes();
+  }
+
   return (
     <div className='App'>
-      <h1>Amplify Notes App</h1>
+      <h1>Amplify & React Notes App</h1>
       <input
         type='text'
         placeholder='Note Name'
@@ -58,6 +79,8 @@ function App() {
         name='name'
         required
       />
+      <br />
+      <br />
       <input
         type='text'
         placeholder='Note Description'
@@ -71,6 +94,11 @@ function App() {
         name='description'
         required
       />
+      <br />
+      <br />
+      <input type='file' onChange={onChange} />
+      <br />
+      <br />
       <button onClick={createNote}>Create Note</button>
       <div style={{ marginBottom: 30 }}>
         {notes.map((note) => (
@@ -78,6 +106,9 @@ function App() {
             <h2>{note.name}</h2>
             <p>{note.description}</p>
             <button onClick={() => deleteNote(note)}>Delete Note</button>
+            {note.image && (
+              <img src={note.image} alt={note.name} style={{ width: 400 }} />
+            )}
           </div>
         ))}
       </div>
